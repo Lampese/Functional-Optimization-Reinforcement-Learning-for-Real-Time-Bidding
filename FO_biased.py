@@ -5,55 +5,66 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
+
 from Agent import *
 from config import *
 
 np.random.seed(0)
 device = torch.device("cpu")
 bid_option = np.arange(10, 100, 1)
-L = np.arange(0.00,0.01,0.00005) #need change
+L = np.arange(0.00, 0.01, 0.00005)  # need change
 action_space1 = len(bid_option)
 action_space2 = len(L)
 
-budget = 1250000
+budget = 250000
 budget_consumption_rate = 0  # recent consumption rate
 operation = 0
 interval = 0
 win_rate = 0
 
-#baseline
-Agent1_baseline1 = DQNAgent(budget=budget, state=[0, 0, 0, 0], observation_space=4, action_space=action_space1)
-#state
-Agent2_operation1 = DQNAgent(budget=budget, state=[0, 0, 0, 0, 0], observation_space=5, action_space=action_space1)
-#action
-Agent3_operation3 = DQNAgent(budget=budget, state=[0, 0, 0, 0], observation_space=4, action_space=action_space2)
-#reward
-Agent4_operation2 = DQNAgent(budget=budget, state=[0, 0, 0, 0], observation_space=4,action_space=action_space1)
-Agents = [Agent1_baseline1,Agent2_operation1,Agent3_operation3,Agent4_operation2]
+# baseline
+Agent1_baseline1 = DQNAgent(
+    budget=budget, state=[0, 0, 0, 0], observation_space=4, action_space=action_space1
+)
+# state
+Agent2_operation1 = DQNAgent(
+    budget=budget,
+    state=[0, 0, 0, 0, 0],
+    observation_space=5,
+    action_space=action_space1,
+)
+# action
+Agent3_operation3 = DQNAgent(
+    budget=budget, state=[0, 0, 0, 0], observation_space=4, action_space=action_space2
+)
+# reward
+Agent4_operation2 = DQNAgent(
+    budget=budget, state=[0, 0, 0, 0], observation_space=4, action_space=action_space1
+)
+Agents = [Agent1_baseline1, Agent2_operation1, Agent3_operation3, Agent4_operation2]
 
 total_request = 0
 writer = pd.ExcelWriter("MARL.xlsx")
 
-win_record = [0,0,0,0]
+win_record = [0, 0, 0, 0]
 
 for time in range(10):
     step = 1  # 1-1000
     total_market = []
-
 
     print(time)
     for i in range(4):
         Agents[i].setup()
         Agents[i].budget = budget
         if i == 1:
-            Agents[i].state = [budget, budget_consumption_rate, win_rate, step,0]
+            Agents[i].state = [budget, budget_consumption_rate, win_rate, step, 0]
         else:
             Agents[i].state = [budget, budget_consumption_rate, win_rate, step]
         Agents[i].next_state = Agents[i].state
         Agents[i].replayBuffer = ReplayBuffer(1000)
 
-# checkpoint = torch.load("./pth/weight_ipinyou_ddqn_cpc.pt")
-# Our_client.network.load_state_dict(checkpoint)
+    # checkpoint = torch.load("./pth/weight_ipinyou_ddqn_cpc.pt")
+    # Our_client.network.load_state_dict(checkpoint)
     n_request_left = 50000
     bid_p = []
 
@@ -66,11 +77,11 @@ for time in range(10):
             if i == 2:
                 if random.random() > epsilon:
                     l = L[Agents[i].action]
-                    temp_price = Agents[i].get_price(Agents[i].w,Agents[i].dw,l)
+                    temp_price = Agents[i].get_price(Agents[i].w, Agents[i].dw, l, 1)
                     if temp_price < 10:
                         temp_price = 10
                 else:
-                    temp_price = random.randrange(10,100,1)
+                    temp_price = random.randrange(10, 100, 1)
                 temp_price = int(temp_price)
             else:
                 temp_price = bid_option[Agents[i].action]
@@ -87,7 +98,7 @@ for time in range(10):
             if bid_p[i] == np.max(bid_p):
                 reward_1.append(5)
                 if i == 1 or i == 2 or i == 3:
-                    Agents[i].update_w_dw(bid_price=bid_p[i], flag=1,request=request)
+                    Agents[i].update_w_dw(bid_price=bid_p[i], flag=1, request=request)
                 if np.sort(bid_p)[2] == 0:
                     second_price = np.sort(bid_p)[3]
                 else:
@@ -101,14 +112,14 @@ for time in range(10):
                 Agents[i].win_period += 1
             else:
                 if i == 1 or i == 2 or i == 3:
-                    Agents[i].update_w_dw(bid_price=bid_p[i],flag=0,request=request)
+                    Agents[i].update_w_dw(bid_price=bid_p[i], flag=0, request=request)
                 reward_1.append(-1)
                 Agents[i].consumption.append(0)
                 Agents[i].win_rate.append(0)
             Agents[i].budget_log.append(Agents[i].budget)
 
         for i in range(4):
-            win_rate = np.sum(Agents[i].win_rate) / (len(Agents[i].win_rate)+0.001)
+            win_rate = np.sum(Agents[i].win_rate) / (len(Agents[i].win_rate) + 0.001)
             consumption_rate = np.mean(Agents[i].consumption)
             remaining_budget = Agents[i].budget
             Agents[i].next_state[3] = Agents[i].state[3] + 1
@@ -116,10 +127,17 @@ for time in range(10):
             Agents[i].next_state[1] = consumption_rate
             Agents[i].next_state[0] = remaining_budget
             if len(Agents[i].state) == 5:
-                Agents[i].next_state[4] = Agents[i].get_lambda(Agents[i].w,Agents[i].dw,Agents[i].bid_log[-1])
+                Agents[i].next_state[4] = Agents[i].get_lambda_biased(
+                    Agents[i].w, Agents[i].dw, Agents[i].bid_log[-1]
+                )
 
         for i in range(4):
-            if Agents[0].budget < 100 and Agents[1].budget < 100 and Agents[2].budget < 100 and Agents[3].budget < 100:
+            if (
+                Agents[0].budget < 100
+                and Agents[1].budget < 100
+                and Agents[2].budget < 100
+                and Agents[3].budget < 100
+            ):
                 compare_win = []
                 for j in range(4):
                     compare_win.append(Agents[j].win)
@@ -129,21 +147,45 @@ for time in range(10):
                     Agents[i].reward = reward_1[i]
             else:
                 if i == 3:
-                    Agents[i].reward = reward_1[i] + 500*Agents[i].get_lambda(Agents[i].w,Agents[i].dw,bid_p[3])
+                    Agents[i].reward = reward_1[i] + 500 * Agents[i].get_lambda_biased(
+                        Agents[i].w, Agents[i].dw, bid_p[3]
+                    )
                     if request % 1000 == 0:
-                        print(500*Agents[i].get_lambda(Agents[i].w,Agents[i].dw,bid_p[3]))
+                        print(
+                            500
+                            * Agents[i].get_lambda_biased(
+                                Agents[i].w, Agents[i].dw, bid_p[3]
+                            )
+                        )
                 else:
                     Agents[i].reward = reward_1[i]
 
         for i in range(4):
-            Agents[i].replayBuffer.push(Agents[i].state, Agents[i].action, Agents[i].reward, Agents[i].next_state, done)
+            Agents[i].replayBuffer.push(
+                Agents[i].state,
+                Agents[i].action,
+                Agents[i].reward,
+                Agents[i].next_state,
+                done,
+            )
             Agents[i].state = Agents[i].next_state
             Agents[i].episode_reward += Agents[i].reward
 
         if request % batch_size == 0:
             for i in range(4):
-                loss = compute_td_loss(Agents[i].network, Agents[i].optimizer, Agents[i].replayBuffer, gamma, batch_size)
-            if Agents[0].budget < 100 and Agents[1].budget < 100 and Agents[2].budget < 100 and Agents[3].budget < 100:
+                loss = compute_td_loss(
+                    Agents[i].network,
+                    Agents[i].optimizer,
+                    Agents[i].replayBuffer,
+                    gamma,
+                    batch_size,
+                )
+            if (
+                Agents[0].budget < 100
+                and Agents[1].budget < 100
+                and Agents[2].budget < 100
+                and Agents[3].budget < 100
+            ):
                 break
 
         if request % 20000 == 0:
@@ -167,12 +209,19 @@ for time in range(10):
     for ii in range(4):
         print(Agents[ii].win)
     print("*****************")
-    output = {"market_price": total_market, "bid_price1": Agents[0].bid_log,
-              "bid_price2": Agents[1].bid_log, "bid_price3": Agents[2].bid_log,
-              "bid_price4": Agents[3].bid_log,
-              "A1_b_log":Agents[0].budget_log,"A2_b_log":Agents[1].budget_log,"A3_b_log":Agents[2].budget_log,"A4_b_log":Agents[3].budget_log}
+    output = {
+        "market_price": total_market,
+        "bid_price1": Agents[0].bid_log,
+        "bid_price2": Agents[1].bid_log,
+        "bid_price3": Agents[2].bid_log,
+        "bid_price4": Agents[3].bid_log,
+        "A1_b_log": Agents[0].budget_log,
+        "A2_b_log": Agents[1].budget_log,
+        "A3_b_log": Agents[2].budget_log,
+        "A4_b_log": Agents[3].budget_log,
+    }
     output = pd.DataFrame(output)
-    output.to_excel(writer,sheet_name='{}'.format(time))
+    output.to_excel(writer, sheet_name="{}".format(time))
 
     total_request += request
     print(epsilon)
@@ -183,7 +232,7 @@ for time in range(10):
 for i in range(4):
     torch.save(Agents[i].network.state_dict(), "./agent{}.pt".format(i))
     # ttotal_win.append(Agents[i].win_log)
-writer.save()
+writer.close()
 
 print(win_record)
 # print("train win:",len(ttotal_win[0]),"total request:",len(data),"win percent:",len(ttotal_win[0])/len(data))
